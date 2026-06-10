@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PhysicsLab — 虚拟物理仿真平台</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Segoe UI','Microsoft YaHei',sans-serif;
+  background:#0f172a;color:#e2e8f0;height:100vh;display:flex;flex-direction:column;overflow:hidden;
+}
+/* ── 顶栏 ── */
+.navbar{
+  background:#1e293b;border-bottom:1px solid #334155;padding:8px 16px;
+  display:flex;align-items:center;gap:6px;flex-shrink:0;
+}
+.navbar .logo{font-size:19px;font-weight:700;color:#22d3ee;margin-right:10px}
+.navbar button{
+  padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;
+  border:1px solid #334155;background:transparent;color:#94a3b8;font-family:inherit;
+  transition:all .2s;white-space:nowrap;
+}
+.navbar button:hover{border-color:#6366f1;color:#e2e8f0}
+.navbar button.active{background:#6366f1;border-color:#6366f1;color:#fff}
+/* ── 主体 ── */
+.main{display:flex;flex:1;overflow:hidden}
+/* 左侧面板 */
+.sidebar{
+  width:260px;min-width:260px;background:#1e293b;border-right:1px solid #334155;
+  overflow-y:auto;flex-shrink:0;
+}
+.sidebar .sec{padding:14px 16px;border-bottom:1px solid #1e293b}
+.sidebar .sec h3{font-size:12px;font-weight:700;color:#22d3ee;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.sidebar label{display:flex;justify-content:space-between;font-size:11px;color:#8899aa;margin-bottom:3px}
+.sidebar label span{color:#22d3ee;font-weight:600}
+.sidebar input[type=range]{width:100%;height:5px;-webkit-appearance:none;background:#334155;border-radius:3px;outline:none;cursor:pointer;margin-bottom:12px}
+.sidebar input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#6366f1;cursor:pointer;border:2px solid #e2e8f0}
+.data-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.data-card{background:#0f172a;border-radius:7px;padding:9px;text-align:center}
+.data-card .val{font-size:18px;font-weight:700;color:#22d3ee}
+.data-card .lbl{font-size:10px;color:#8899aa;margin-top:1px}
+.formula{font-size:11px;color:#8899aa;line-height:1.7}
+/* 画布区 */
+.canvas-box{flex:1;position:relative;background:radial-gradient(ellipse at center,#111d30 0%,#0b1120 70%)}
+canvas{display:block;position:absolute;top:0;left:0}
+/* ── 底栏 ── */
+.bottombar{background:#1e293b;border-top:1px solid #334155;flex-shrink:0}
+.controls{display:flex;gap:7px;padding:7px 16px;align-items:center}
+.controls button{
+  padding:7px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;
+  border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-family:inherit;transition:all .2s;
+}
+.controls button:hover{border-color:#6366f1}
+.controls .btn-play{background:#6366f1;border-color:#6366f1}
+.controls .btn-reset{background:#f59e0b;border-color:#f59e0b;color:#0f172a}
+.controls .info{font-size:11px;color:#8899aa;padding:4px 10px;background:#0f172a;border-radius:5px;margin-left:6px}
+.data-log{display:flex;gap:7px;padding:4px 16px 7px;align-items:center;border-top:1px solid rgba(51,65,85,.5);font-size:11px}
+.data-log .cnt{color:#22d3ee;font-weight:600}
+.data-log button{font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;border:1px solid #334155;background:#1e293b;color:#e2e8f0;font-family:inherit}
+.btn-export{background:#22d3ee!important;border-color:#22d3ee!important;color:#0f172a!important}
+</style>
+</head>
+<body onload="startup()">
+
+<!-- ═══ 顶栏 ═══ -->
+<div class="navbar">
+  <span class="logo">⚛ PhysicsLab</span>
+  <a href="PhysicsLab_Manual.md" target="_blank" style="font-size:11px;color:#8899aa;text-decoration:none;padding:6px 10px;border:1px solid #334155;border-radius:6px;margin-right:6px" title="打开实验说明书">📖 说明书</a>
+  <button class="active" onclick="switchTab(0)">⏳ 单摆运动</button>
+  <button onclick="switchTab(1)">〰️ 波动干涉</button>
+  <button onclick="switchTab(2)">🌌 万有引力</button>
+  <button onclick="switchTab(3)">🔍 凸透镜成像</button>
+  <span style="margin-left:auto;font-size:10px;color:#6366f1" id="fpsBadge">— FPS</span>
+</div>
+
+<!-- ═══ 主体 ═══ -->
+<div class="main">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="canvas-box" id="canvasBox">
+    <canvas id="cv"></canvas>
+  </div>
+</div>
+
+<!-- ═══ 底栏 ═══ -->
+<div class="bottombar">
+  <div class="controls">
+    <button class="btn-play" onclick="play()">▶ 播放</button>
+    <button onclick="pause()">⏸ 暂停</button>
+    <button class="btn-reset" onclick="reset()">↺ 重置</button>
+    <button onclick="recordData()">📝 记录数据</button>
+    <span class="info">速度：<input type="range" id="speedSlider" min="2" max="50" value="10" style="width:80px;vertical-align:middle" oninput="onSpeed(this.value)"></span>
+    <span class="info" id="speedLabel">1.0×</span>
+    <span class="info" id="infoText" style="flex:1">单摆运动 — 就绪</span>
+  </div>
+  <div class="data-log">
+    <span class="cnt" id="logCount">已记录 0 条</span>
+    <button class="btn-export" id="btnExport" disabled onclick="exportCSV()">📥 导出 CSV</button>
+    <button id="btnClearLog" disabled onclick="clearLog()">清空</button>
+    <span style="color:#8899aa;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="logPreview"></span>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// 全局状态
+// ═══════════════════════════════════════════════════════════
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const canvasBox = document.getElementById('canvasBox');
+const sidebar = document.getElementById('sidebar');
+
+let W, H;                // Canvas 逻辑尺寸
+let running = true;      // 是否播放
+let simSpeed = 1.0;      // 速度倍率
+let curTab = 0;          // 当前 Tab
+let frameCount = 0;
+let animId;
+let dataLog = [];
+let logColumns = [];
+
+// ═══════════════════════════════════════════════════════════
+// Canvas 尺寸
+// ═══════════════════════════════════════════════════════════
+function sizeCanvas() {
+  const r = canvasBox.getBoundingClientRect();
+  W = Math.max(r.width, 400);
+  H = Math.max(r.height, 300);
+  cv.width = W;
+  cv.height = H;
+}
+
+// ═══════════════════════════════════════════════════════════
+// 全局按钮
+// ═══════════════════════════════════════════════════════════
+function play()  { running = true; }
+function pause() { running = false; }
+function reset() { initExperiment(curTab); }
+function onSpeed(v) { simSpeed = parseInt(v) / 10; document.getElementById('speedLabel').textContent = simSpeed.toFixed(1) + '×'; }
+
+// ═══════════════════════════════════════════════════════════
+// Tab 切换
+// ═══════════════════════════════════════════════════════════
+function switchTab(idx) {
+  curTab = idx;
+  document.querySelectorAll('.navbar button').forEach((b, i) => b.classList.toggle('active', i === idx + 1));
+  // +1 因为第一个 button 是 logo 之前的... 不，logo 是 span，buttons 都是 button
+  // 重新查询：第一个 nav button 是 tab 0
+  const tabs = document.querySelectorAll('.navbar button');
+  tabs.forEach((b, i) => b.classList.toggle('active', i === idx));
+  dataLog = [];
+  updateLogUI();
+  initExperiment(idx);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 数据记录
+// ═══════════════════════════════════════════════════════════
+function recordData() {
+  const row = experiments[curTab].logData();
+  dataLog.push(row);
+  updateLogUI();
+  const last = dataLog[dataLog.length - 1];
+  let prev = '';
+  for (const k in last) prev += k + ':' + last[k] + ' ';
+  document.getElementById('logPreview').textContent = prev;
+}
+function updateLogUI() {
+  document.getElementById('logCount').textContent = '已记录 ' + dataLog.length + ' 条';
+  document.getElementById('btnExport').disabled = dataLog.length === 0;
+  document.getElementById('btnClearLog').disabled = dataLog.length === 0;
+}
+function clearLog() {
+  dataLog = [];
+  updateLogUI();
+  document.getElementById('logPreview').textContent = '';
+}
+function exportCSV() {
+  if (!dataLog.length) return;
+  const cols = Object.keys(dataLog[0]);
+  let csv = '﻿' + cols.join(',') + '\n';
+  for (const row of dataLog) csv += cols.map(c => row[c]).join(',') + '\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'PhysicsLab_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ═══════════════════════════════════════════════════════════
+// FPS
+// ═══════════════════════════════════════════════════════════
+let fpsCount = 0, fpsLast = 0;
+function tickFPS(now) {
+  fpsCount++;
+  if (now - fpsLast >= 1000) {
+    document.getElementById('fpsBadge').textContent = fpsCount + ' FPS';
+    fpsCount = 0;
+    fpsLast = now;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 辅助：滑块
+// ═══════════════════════════════════════════════════════════
+function slider(id, min, max, step, val, cb) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.min = min; el.max = max; el.step = step; el.value = val;
+  el.oninput = function () { cb(parseFloat(this.value)); };
+}
+
+// ═══════════════════════════════════════════════════════════
+// 辅助：绘制网格背景
+// ═══════════════════════════════════════════════════════════
+function drawGrid() {
+  const gs = 50;
+  ctx.strokeStyle = 'rgba(51,65,85,.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = gs; x < W; x += gs) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = gs; y < H; y += gs) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════════════════
+// 实验 0：单摆运动
+// ═══════════════════════════════════════════════════════════
+const pend = {
+  L: 200, angle0: 30, g: 9.81, damp: 0.01,
+  angle: 0, omega: 0, time: 0, trail: [], pivotX: 0, pivotY: 0,
+};
+
+function initPendulum() {
+  const p = pend;
+  sizeCanvas();
+  p.pivotX = W / 2;
+  p.pivotY = H * 0.18;
+  p.L = Math.min(W / 3, H * 0.55);
+  p.angle = p.angle0 * Math.PI / 180;
+  p.omega = 0;
+  p.time = 0;
+  p.trail = [];
+
+  sidebar.innerHTML =
+    '<div class="sec">' +
+      '<h3>⚙️ 参数调节</h3>' +
+      '<label>摆长 L <span id="vLen">' + p.L + '</span> px</label>' +
+      '<input type="range" id="sLen" min="60" max="380" step="5" value="' + p.L + '">' +
+      '<label>初始角度 θ₀ <span id="vAng">' + p.angle0 + '</span>°</label>' +
+      '<input type="range" id="sAng" min="3" max="85" step="1" value="' + p.angle0 + '">' +
+      '<label>重力加速度 g <span id="vGrav">' + p.g + '</span> m/s²</label>' +
+      '<input type="range" id="sGrav" min="1" max="25" step="0.1" value="' + p.g + '">' +
+      '<label>阻尼系数 b <span id="vDamp">' + p.damp.toFixed(3) + '</span></label>' +
+      '<input type="range" id="sDamp" min="0" max="0.3" step="0.005" value="' + p.damp + '">' +
+    '</div>' +
+    '<div class="sec" style="background:rgba(99,102,241,.06)">' +
+      '<h3>📊 实时数据</h3>' +
+      '<div class="data-grid">' +
+        '<div class="data-card"><div class="val" id="dPeriod">--</div><div class="lbl">周期 T (s)</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dAngle">' + p.angle0 + '°</div><div class="lbl">角度 θ</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dOmega">0.0</div><div class="lbl">角速度 ω</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dEnergy">100%</div><div class="lbl">能量比</div></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sec">' +
+      '<h3>📖 物理公式</h3>' +
+      '<div class="formula">T = 2π√(L/g)<br>θ\'\' = -(g/L)sinθ - bθ\'<br>积分：RK4</div>' +
+    '</div>';
+
+  slider('sLen', 60, 380, 5, p.L, v => { p.L = v; document.getElementById('vLen').textContent = v; });
+  slider('sAng', 3, 85, 1, p.angle0, v => { p.angle0 = v; p.angle = v * Math.PI / 180; p.omega = 0; p.time = 0; document.getElementById('vAng').textContent = v; });
+  slider('sGrav', 1, 25, 0.1, p.g, v => { p.g = v; document.getElementById('vGrav').textContent = v; });
+  slider('sDamp', 0, 0.3, 0.005, p.damp, v => { p.damp = v; document.getElementById('vDamp').textContent = v.toFixed(3); });
+}
+
+function updatePendulum(dt) {
+  const p = pend;
+  const sdt = Math.min(dt * simSpeed, 0.03);
+  const steps = Math.ceil(sdt / 0.004);
+  const h = sdt / steps;
+
+  for (let i = 0; i < steps; i++) {
+    // RK4
+    const Lm = p.L / 100;
+    function deriv(a, w) { return { da: w, dw: -(p.g / Lm) * Math.sin(a) - p.damp * w }; }
+    const s = { a: p.angle, w: p.omega };
+    const k1 = deriv(s.a, s.w);
+    const k2 = deriv(s.a + h / 2 * k1.da, s.w + h / 2 * k1.dw);
+    const k3 = deriv(s.a + h / 2 * k2.da, s.w + h / 2 * k2.dw);
+    const k4 = deriv(s.a + h * k3.da, s.w + h * k3.dw);
+    p.angle += h / 6 * (k1.da + 2 * k2.da + 2 * k3.da + k4.da);
+    p.omega += h / 6 * (k1.dw + 2 * k2.dw + 2 * k3.dw + k4.dw);
+  }
+  p.time += sdt;
+
+  // Trail
+  const bx = p.pivotX + p.L * Math.sin(p.angle);
+  const by = p.pivotY + p.L * Math.cos(p.angle);
+  p.trail.push({ x: bx, y: by, life: 1 });
+  for (const t of p.trail) t.life -= sdt * 0.6;
+  p.trail = p.trail.filter(t => t.life > 0);
+  if (p.trail.length > 500) p.trail.splice(0, 100);
+
+  // DOM 更新（节流）
+  if (frameCount % 5 !== 0) return;
+  const Lm = p.L / 100;
+  const T = 2 * Math.PI / Math.sqrt(p.g / Lm);
+  const E0 = 0.5 * p.g / Lm * (p.angle0 * Math.PI / 180) * (p.angle0 * Math.PI / 180);
+  const Enow = 0.5 * p.omega * p.omega + p.g / Lm * (1 - Math.cos(p.angle));
+  const ep = E0 > 0 ? Math.round(Math.min(100, Enow / E0 * 100)) : 100;
+  const el = id => document.getElementById(id);
+  const set = (id, v) => { const e = el(id); if (e) e.textContent = v; };
+  set('dPeriod', T.toFixed(2));
+  set('dAngle', (p.angle * 180 / Math.PI).toFixed(1) + '°');
+  set('dOmega', p.omega.toFixed(2));
+  set('dEnergy', ep + '%');
+}
+
+function drawPendulum() {
+  const p = pend;
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  const bx = p.pivotX + p.L * Math.sin(p.angle);
+  const by = p.pivotY + p.L * Math.cos(p.angle);
+
+  // 天花板
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(p.pivotX - 70, p.pivotY - 2);
+  ctx.lineTo(p.pivotX + 70, p.pivotY - 2);
+  ctx.stroke();
+
+  // 轨迹拖尾
+  if (p.trail.length > 1) {
+    ctx.beginPath();
+    ctx.moveTo(p.trail[0].x, p.trail[0].y);
+    for (let i = 1; i < p.trail.length; i++) ctx.lineTo(p.trail[i].x, p.trail[i].y);
+    ctx.strokeStyle = 'rgba(99,102,241,.4)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+
+  // 杆
+  ctx.beginPath();
+  ctx.moveTo(p.pivotX, p.pivotY);
+  ctx.lineTo(bx, by);
+  ctx.strokeStyle = '#64748b';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // 虚线弧
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(p.pivotX, p.pivotY, 45, -Math.PI / 2, -Math.PI / 2 + p.angle);
+  ctx.strokeStyle = 'rgba(34,211,238,.4)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 摆球（带光晕）
+  const grd = ctx.createRadialGradient(bx - 4, by - 4, 3, bx, by, 22);
+  grd.addColorStop(0, '#a5b4fc');
+  grd.addColorStop(1, '#3730a3');
+  ctx.beginPath();
+  ctx.arc(bx, by, 22, 0, Math.PI * 2);
+  ctx.fillStyle = grd;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(bx, by, 28, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(99,102,241,.1)';
+  ctx.fill();
+
+  // 支点
+  ctx.beginPath();
+  ctx.arc(p.pivotX, p.pivotY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = '#22d3ee';
+  ctx.fill();
+
+  // 底部信息
+  const Lm = p.L / 100;
+  const T = 2 * Math.PI / Math.sqrt(p.g / Lm);
+  ctx.fillStyle = '#8899aa';
+  ctx.font = '13px "Microsoft YaHei"';
+  ctx.fillText('L=' + p.L + 'px  g=' + p.g + '  T≈' + T.toFixed(2) + 's  |  按「📝 记录数据」采集数据', 20, H - 16);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 实验 1：双缝干涉
+// ═══════════════════════════════════════════════════════════
+const wave = {
+  lambda: 550, d: 0.3, D: 1.0,
+  time: 0, cache: null, cacheKey: '',
+};
+
+function initWave() {
+  const w = wave;
+  sizeCanvas();
+  w.time = 0;
+  w.cache = null;
+  w.cacheKey = '';
+
+  sidebar.innerHTML =
+    '<div class="sec">' +
+      '<h3>⚙️ 参数调节</h3>' +
+      '<label>波长 λ <span id="vWL">' + w.lambda + '</span> nm</label>' +
+      '<input type="range" id="sWL" min="380" max="780" step="5" value="' + w.lambda + '">' +
+      '<label>双缝间距 d <span id="vSD">' + w.d.toFixed(2) + '</span> mm</label>' +
+      '<input type="range" id="sSD" min="5" max="200" step="1" value="' + Math.round(w.d * 100) + '">' +
+      '<label>屏幕距离 D <span id="vDD">' + w.D.toFixed(1) + '</span> m</label>' +
+      '<input type="range" id="sDD" min="50" max="300" step="5" value="' + Math.round(w.D * 100) + '">' +
+    '</div>' +
+    '<div class="sec" style="background:rgba(99,102,241,.06)">' +
+      '<h3>📊 实时数据</h3>' +
+      '<div class="data-grid">' +
+        '<div class="data-card"><div class="data-val" id="dDX">--</div><div class="data-lbl">条纹间距 Δx(mm)</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dMax">--</div><div class="data-lbl">可见明纹数</div></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sec">' +
+      '<h3>📖 物理公式</h3>' +
+      '<div class="formula">明纹: d·sinθ = kλ<br>暗纹: d·sinθ = (k+½)λ<br>Δx = λD/d<br>I ∝ cos²(πd·sinθ/λ)</div>' +
+    '</div>';
+
+  const invalidate = () => { w.cache = null; w.cacheKey = ''; };
+  slider('sWL', 380, 780, 5, w.lambda, v => { w.lambda = v; document.getElementById('vWL').textContent = v; invalidate(); });
+  slider('sSD', 5, 200, 1, Math.round(w.d * 100), v => { w.d = v / 100; document.getElementById('vSD').textContent = w.d.toFixed(2); invalidate(); });
+  slider('sDD', 50, 300, 5, Math.round(w.D * 100), v => { w.D = v / 100; document.getElementById('vDD').textContent = w.D.toFixed(1); invalidate(); });
+}
+
+function updateWave(dt) {
+  wave.time += dt * simSpeed;
+}
+
+function drawWave() {
+  const w = wave;
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  const cy = H * 0.45;
+  const s1y = cy - 55, s2y = cy + 55;
+  const sx = W * 0.08, slx = W * 0.22, scx = W * 0.78;
+  const scw = W - scx - 20, scH = 320, scTop = cy - scH / 2;
+
+  // 光源
+  const sgrd = ctx.createRadialGradient(sx, cy, 2, sx, cy, 12);
+  sgrd.addColorStop(0, '#fef08a');
+  sgrd.addColorStop(0.5, '#eab308');
+  sgrd.addColorStop(1, 'rgba(234,179,8,0)');
+  ctx.beginPath();
+  ctx.arc(sx, cy, 12, 0, Math.PI * 2);
+  ctx.fillStyle = sgrd;
+  ctx.fill();
+
+  // 光线到双缝
+  ctx.setLineDash([3, 5]);
+  ctx.beginPath();
+  ctx.moveTo(sx + 10, cy); ctx.lineTo(slx - 8, s1y);
+  ctx.moveTo(sx + 10, cy); ctx.lineTo(slx - 8, s2y);
+  ctx.strokeStyle = 'rgba(250,204,21,.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 挡板
+  ctx.fillStyle = '#334155';
+  ctx.fillRect(slx, cy - 140, 5, 80);
+  ctx.fillRect(slx, cy - 35, 5, 80);
+  ctx.fillRect(slx, cy + 65, 5, 80);
+
+  for (const sy of [s1y, s2y]) {
+    ctx.beginPath();
+    ctx.arc(slx + 2, sy, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fef08a';
+    ctx.fill();
+  }
+
+  // 扩散波
+  for (const sy of [s1y, s2y]) {
+    for (let i = 1; i <= 4; i++) {
+      const r = 12 + ((w.time * 70 + i * 22) % 95);
+      const alpha = Math.max(0, 1 - r / 95) * 0.2;
+      ctx.beginPath();
+      ctx.arc(slx + 2, sy, r, -Math.PI / 2 - 0.45, Math.PI / 2 + 0.45);
+      ctx.strokeStyle = 'rgba(99,102,241,' + alpha + ')';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+
+  // 屏幕
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(scx, scTop, scw, scH);
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(scx, scTop, scw, scH);
+
+  // 干涉条纹（缓存）
+  const ck = w.lambda + '_' + w.d + '_' + w.D;
+  if (!w.cache || w.cacheKey !== ck) {
+    w.cacheKey = ck;
+    const d_m = w.d / 1000, lambda_m = w.lambda * 1e-9;
+    const steps = 400;
+    w.cache = new Float32Array(steps + 1);
+    for (let i = 0; i <= steps; i++) {
+      const yr = (i / steps - 0.5) * scH;
+      const theta = Math.atan2(yr, (scx - slx));
+      const phi = 2 * Math.PI * d_m * Math.sin(theta) / (lambda_m + 1e-12);
+      w.cache[i] = Math.cos(phi / 2) * Math.cos(phi / 2);
+    }
+  }
+
+  const steps = 400;
+  for (let i = 0; i <= steps; i++) {
+    const I = w.cache[i] * 4;
+    const alpha = Math.min(1, I / 4);
+    const y = cy + (i / steps - 0.5) * scH;
+    ctx.beginPath();
+    ctx.moveTo(scx + 1, y);
+    ctx.lineTo(scx + scw - 1, y);
+    ctx.strokeStyle = 'rgba(99,102,241,' + alpha + ')';
+    ctx.lineWidth = scH / steps + 0.5;
+    ctx.stroke();
+  }
+
+  // 条纹间距
+  const d_m = w.d / 1000, lambda_m = w.lambda * 1e-9;
+  const dx = w.D * lambda_m / (d_m + 1e-12);
+  const dx_mm = dx * 1000;
+
+  const elDX = document.getElementById('dDX');
+  if (elDX) elDX.textContent = dx_mm.toFixed(2);
+  const elMax = document.getElementById('dMax');
+  if (elMax) elMax.textContent = Math.floor(scH / (dx * 1000) / 2);
+
+  ctx.fillStyle = '#8899aa';
+  ctx.font = '13px "Microsoft YaHei"';
+  ctx.fillText('λ=' + w.lambda + 'nm  d=' + w.d.toFixed(2) + 'mm  D=' + w.D.toFixed(1) + 'm  Δx=' + dx_mm.toFixed(2) + 'mm', 20, H - 16);
+  ctx.fillText('光源', sx - 4, cy + 42);
+  ctx.fillText('双缝', slx - 4, cy - 148);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 实验 2：万有引力
+// ═══════════════════════════════════════════════════════════
+const grav = {
+  m1: 5e11, m2: 3e11, G: 500,
+  x1: 0, y1: 0, vx1: 0, vy1: 0,
+  x2: 0, y2: 0, vx2: 0, vy2: 0,
+  trail1: [], trail2: [], time: 0,
+};
+
+function initGravity() {
+  const g = grav;
+  sizeCanvas();
+  const cx = W / 2, cy = H / 2;
+  g.x1 = cx + 25; g.y1 = cy; g.vx1 = 0; g.vy1 = -28;
+  g.x2 = cx - 180; g.y2 = cy; g.vx2 = 0; g.vy2 = 65;
+  g.trail1 = []; g.trail2 = []; g.time = 0;
+
+  sidebar.innerHTML =
+    '<div class="sec">' +
+      '<h3>⚙️ 参数调节</h3>' +
+      '<label>天体1质量 M₁ <span id="vM1">5.0</span>×10¹¹</label>' +
+      '<input type="range" id="sM1" min="1" max="10" step="0.1" value="5">' +
+      '<label>天体2质量 M₂ <span id="vM2">3.0</span>×10¹¹</label>' +
+      '<input type="range" id="sM2" min="1" max="10" step="0.1" value="3">' +
+      '<label>引力常数 G <span id="vGconst">500</span></label>' +
+      '<input type="range" id="sGconst" min="100" max="2000" step="20" value="500">' +
+    '</div>' +
+    '<div class="sec" style="background:rgba(99,102,241,.06)">' +
+      '<h3>📊 实时数据</h3>' +
+      '<div class="data-grid">' +
+        '<div class="data-card"><div class="data-val" id="dDist">--</div><div class="data-lbl">距离</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dForce">--</div><div class="data-lbl">引力</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dKE">--</div><div class="data-lbl">动能(×10¹²)</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dPeriodG">0.0</div><div class="data-lbl">时间</div></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sec">' +
+      '<h3>📖 物理公式</h3>' +
+      '<div class="formula">F = GM₁M₂/r²<br>积分：RK4<br>质心不变·动量守恒</div>' +
+    '</div>';
+
+  slider('sM1', 1, 10, 0.1, 5, v => { g.m1 = v * 1e11; document.getElementById('vM1').textContent = v.toFixed(1); });
+  slider('sM2', 1, 10, 0.1, 3, v => { g.m2 = v * 1e11; document.getElementById('vM2').textContent = v.toFixed(1); });
+  slider('sGconst', 100, 2000, 20, 500, v => { g.G = v; document.getElementById('vGconst').textContent = v; });
+}
+
+function updateGravity(dt) {
+  const g = grav;
+  const sdt = Math.min(dt * simSpeed, 0.03) * 0.1;
+  const steps = Math.ceil(sdt / 0.002);
+  const h = sdt / steps;
+
+  for (let s = 0; s < steps; s++) {
+    const dx = g.x2 - g.x1, dy = g.y2 - g.y1;
+    const r = Math.sqrt(dx * dx + dy * dy) + 2;
+    const F = g.G * g.m1 * g.m2 / (r * r);
+    const ax1 = F / g.m1 * dx / r, ay1 = F / g.m1 * dy / r;
+    const ax2 = -F / g.m2 * dx / r, ay2 = -F / g.m2 * dy / r;
+
+    g.vx1 += ax1 * h; g.vy1 += ay1 * h;
+    g.vx2 += ax2 * h; g.vy2 += ay2 * h;
+    g.x1 += g.vx1 * h; g.y1 += g.vy1 * h;
+    g.x2 += g.vx2 * h; g.y2 += g.vy2 * h;
+  }
+  g.time += sdt;
+
+  // 轨迹
+  g.trail1.push({ x: g.x1, y: g.y1, life: 1 });
+  g.trail2.push({ x: g.x2, y: g.y2, life: 1 });
+  for (const t of g.trail1) t.life -= sdt * 0.25;
+  for (const t of g.trail2) t.life -= sdt * 0.25;
+  g.trail1 = g.trail1.filter(t => t.life > 0);
+  g.trail2 = g.trail2.filter(t => t.life > 0);
+  if (g.trail1.length > 500) { g.trail1.splice(0, 100); g.trail2.splice(0, 100); }
+
+  if (frameCount % 5 !== 0) return;
+  const dx = g.x2 - g.x1, dy = g.y2 - g.y1, dist = Math.sqrt(dx * dx + dy * dy);
+  const F = g.G * g.m1 * g.m2 / (dist * dist);
+  const ke = 0.5 * g.m1 * (g.vx1 * g.vx1 + g.vy1 * g.vy1) + 0.5 * g.m2 * (g.vx2 * g.vx2 + g.vy2 * g.vy2);
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('dDist', Math.round(dist));
+  set('dForce', F.toExponential(1));
+  set('dKE', (ke / 1e12).toFixed(2));
+  set('dPeriodG', g.time.toFixed(1));
+}
+
+function drawGravity() {
+  const g = grav;
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+
+  // 质心
+  const tm = g.m1 + g.m2;
+  const comX = (g.x1 * g.m1 + g.x2 * g.m2) / tm;
+  const comY = (g.y1 * g.m1 + g.y2 * g.m2) / tm;
+  ctx.strokeStyle = 'rgba(100,116,139,.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(comX - 10, comY); ctx.lineTo(comX + 10, comY);
+  ctx.moveTo(comX, comY - 10); ctx.lineTo(comX, comY + 10);
+  ctx.stroke();
+
+  // 轨迹
+  for (const [trail, color] of [[g.trail1, 'rgba(99,102,241,.45)'], [g.trail2, 'rgba(34,211,238,.45)']]) {
+    if (trail.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(trail[0].x, trail[0].y);
+    for (let i = 1; i < trail.length; i++) ctx.lineTo(trail[i].x, trail[i].y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
+  // 连线
+  ctx.setLineDash([4, 6]);
+  ctx.beginPath();
+  ctx.moveTo(g.x1, g.y1); ctx.lineTo(g.x2, g.y2);
+  ctx.strokeStyle = 'rgba(148,163,184,.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 天体
+  const bodies = [[g.x2, g.y2, 15, '#22d3ee', '#0891b2'], [g.x1, g.y1, 24, '#a5b4fc', '#3730a3']];
+  for (const [bx, by, r, c1, c2] of bodies) {
+    const grd = ctx.createRadialGradient(bx - r * 0.2, by - r * 0.2, r * 0.1, bx, by, r);
+    grd.addColorStop(0, c1);
+    grd.addColorStop(1, c2);
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.fillStyle = grd;
+    ctx.fill();
+  }
+
+  // 速度箭头
+  for (const [bx, by, vx, vy] of [[g.x1, g.y1, g.vx1, g.vy1], [g.x2, g.y2, g.vx2, g.vy2]]) {
+    const v = Math.sqrt(vx * vx + vy * vy);
+    if (v < 0.5) continue;
+    const nx = vx / v, ny = vy / v;
+    const ex = bx + nx * 30, ey = by + ny * 30;
+    ctx.beginPath();
+    ctx.moveTo(bx, by); ctx.lineTo(ex, ey);
+    const ang = Math.atan2(ny, nx);
+    ctx.lineTo(ex - 8 * Math.cos(ang - Math.PI / 6), ey - 8 * Math.sin(ang - Math.PI / 6));
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - 8 * Math.cos(ang + Math.PI / 6), ey - 8 * Math.sin(ang + Math.PI / 6));
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#8899aa';
+  ctx.font = '13px "Microsoft YaHei"';
+  ctx.fillText('M₁=' + (g.m1 / 1e11).toFixed(1) + 'e11  M₂=' + (g.m2 / 1e11).toFixed(1) + 'e11  G=' + g.G + '  + 质心', 20, H - 16);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 实验 3：凸透镜成像
+// ═══════════════════════════════════════════════════════════
+const lens = {
+  f: 150, u: 300, h: 90,
+  lx: 0, ly: 0, dirty: true, lastKey: '',
+};
+
+function initLens() {
+  const l = lens;
+  sizeCanvas();
+  l.lx = W * 0.42;
+  l.ly = H / 2;
+  l.f = Math.min(180, W * 0.18);
+  l.u = Math.min(330, W * 0.28);
+  l.h = Math.min(95, H * 0.25);
+  l.dirty = true;
+  l.lastKey = '';
+
+  sidebar.innerHTML =
+    '<div class="sec">' +
+      '<h3>⚙️ 参数调节</h3>' +
+      '<label>焦距 f <span id="vFocal">' + l.f + '</span> px</label>' +
+      '<input type="range" id="sFocal" min="40" max="300" step="5" value="' + l.f + '">' +
+      '<label>物距 u <span id="vObjD">' + l.u + '</span> px</label>' +
+      '<input type="range" id="sObjD" min="40" max="520" step="5" value="' + l.u + '">' +
+      '<label>物高 h <span id="vObjH">' + l.h + '</span> px</label>' +
+      '<input type="range" id="sObjH" min="15" max="200" step="5" value="' + l.h + '">' +
+    '</div>' +
+    '<div class="sec" style="background:rgba(99,102,241,.06)">' +
+      '<h3>📊 实时数据</h3>' +
+      '<div class="data-grid">' +
+        '<div class="data-card"><div class="data-val" id="dImgDist">--</div><div class="data-lbl">像距 v (px)</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dMag">--</div><div class="data-lbl">放大率 m</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dImgH">--</div><div class="data-lbl">像高 h\' (px)</div></div>' +
+        '<div class="data-card"><div class="data-val" id="dImgType">--</div><div class="data-lbl">像的性质</div></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="sec">' +
+      '<h3>📖 物理公式</h3>' +
+      '<div class="formula">1/f = 1/u + 1/v<br>m = -v/u<br>u>2f: 倒立缩小实像<br>u=2f: 等大实像<br>f&lt;u&lt;2f: 倒立放大实像<br>u&lt;f: 正立放大虚像</div>' +
+    '</div>';
+
+  slider('sFocal', 40, 300, 5, l.f, v => { l.f = v; l.dirty = true; document.getElementById('vFocal').textContent = v; });
+  slider('sObjD', 40, 520, 5, l.u, v => { l.u = v; l.dirty = true; document.getElementById('vObjD').textContent = v; });
+  slider('sObjH', 15, 200, 5, l.h, v => { l.h = v; l.dirty = true; document.getElementById('vObjH').textContent = v; });
+}
+
+function computeImage() {
+  const f = lens.f, u = lens.u;
+  if (Math.abs(u - f) < 1) return { v: Infinity, m: Infinity, h: Infinity, type: '不成像 (u≈f)', real: false };
+  const v = 1 / (1 / f - 1 / u);
+  const m = -v / u;
+  const imgH = Math.abs(m) * lens.h;
+  let type;
+  if (u > 2 * f) type = '倒立·缩小·实像';
+  else if (Math.abs(u - 2 * f) < 2) type = '倒立·等大·实像';
+  else if (u > f) type = '倒立·放大·实像';
+  else type = '正立·放大·虚像';
+  return { v, m, h: imgH, type, real: u > f };
+}
+
+function updateLens(dt) {
+  const key = lens.f + '_' + lens.u + '_' + lens.h;
+  if (key !== lens.lastKey) { lens.dirty = true; lens.lastKey = key; }
+}
+
+function drawLens() {
+  if (!lens.dirty) return;
+  lens.dirty = false;
+
+  const l = lens;
+  ctx.clearRect(0, 0, W, H);
+  drawGrid();
+  const img = computeImage();
+
+  // 光轴
+  ctx.beginPath();
+  ctx.moveTo(0, l.ly); ctx.lineTo(W, l.ly);
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([10, 5]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 透镜
+  const lensH = 200;
+  ctx.beginPath();
+  ctx.moveTo(l.lx, l.ly - lensH);
+  ctx.quadraticCurveTo(l.lx + 22, l.ly, l.lx, l.ly + lensH);
+  ctx.quadraticCurveTo(l.lx - 22, l.ly, l.lx, l.ly - lensH);
+  ctx.fillStyle = 'rgba(99,102,241,.1)';
+  ctx.fill();
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // 透镜箭头
+  ctx.beginPath();
+  ctx.moveTo(l.lx, l.ly - lensH - 8); ctx.lineTo(l.lx - 5, l.ly - lensH + 5);
+  ctx.moveTo(l.lx, l.ly - lensH - 8); ctx.lineTo(l.lx + 5, l.ly - lensH + 5);
+  ctx.moveTo(l.lx, l.ly + lensH + 8); ctx.lineTo(l.lx - 5, l.ly + lensH - 5);
+  ctx.moveTo(l.lx, l.ly + lensH + 8); ctx.lineTo(l.lx + 5, l.ly + lensH - 5);
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // F 和 2F
+  for (const side of [-1, 1]) {
+    for (const [fx, label, r] of [[l.lx - side * l.f, side === 1 ? 'F' : "F'", 4], [l.lx - side * 2 * l.f, side === 1 ? '2F' : "2F'", 3]]) {
+      ctx.beginPath();
+      ctx.arc(fx, l.ly, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#f59e0b';
+      ctx.fill();
+      ctx.fillStyle = '#8899aa';
+      ctx.font = '10px "Microsoft YaHei"';
+      ctx.fillText(label, fx - 12, l.ly + 16);
+    }
+  }
+
+  // 物体箭头
+  const ox = l.lx - l.u, oty = l.ly - l.h;
+  function arrow(x, baseY, topY, color, label) {
+    ctx.beginPath();
+    ctx.moveTo(x, baseY); ctx.lineTo(x, topY);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    const dir = topY < baseY ? -1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(x, topY); ctx.lineTo(x - 6, topY + 10 * dir);
+    ctx.moveTo(x, topY); ctx.lineTo(x + 6, topY + 10 * dir);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.font = '11px "Microsoft YaHei"';
+    ctx.fillText(label, x - 14, baseY + 16);
+  }
+
+  if (ox > 8) arrow(ox, l.ly, oty, '#e2e8f0', '物体');
+
+  // 像
+  if (img.real && isFinite(img.v) && img.v > 0) {
+    const ix = l.lx + img.v, ity = l.ly + img.h * (img.m > 0 ? 1 : -1);
+    if (ix < W - 50) arrow(ix, l.ly, ity, 'rgba(34,211,238,.75)', '实像');
+  } else if (!img.real) {
+    const vix = l.lx + img.v, ity = l.ly - img.h;
+    if (vix > 8) {
+      arrow(vix, l.ly, ity, 'rgba(239,68,68,.55)', '虚像');
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(l.lx + 20, l.ly); ctx.lineTo(vix, ity);
+      ctx.moveTo(l.lx + 20, l.ly); ctx.lineTo(vix, l.ly + img.h);
+      ctx.strokeStyle = 'rgba(239,68,68,.35)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // 特征光线
+  if (img.real && isFinite(img.v) && img.v > 0) {
+    const ix = l.lx + img.v, ity = l.ly + img.h * (img.m > 0 ? 1 : -1);
+    ctx.setLineDash([4, 4]);
+    const rays = [[ox, oty, l.lx, oty, ix, ity, 'rgba(250,204,21,.45)'], [ox, oty, l.lx, l.ly, ix, ity, 'rgba(250,204,21,.25)'], [ox, oty, l.lx - l.f, l.ly, ix, ity, 'rgba(250,204,21,.18)']];
+    for (const [x1, y1, x2, y2, x3, y3, color] of rays) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x3 + 35, y3);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // 数据
+  const s = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  s('dImgDist', isFinite(img.v) ? img.v.toFixed(0) : '∞');
+  s('dMag', isFinite(img.m) ? img.m.toFixed(1) : '—');
+  s('dImgH', isFinite(img.h) ? img.h.toFixed(0) : '—');
+  s('dImgType', img.type);
+
+  ctx.fillStyle = '#8899aa';
+  ctx.font = '13px "Microsoft YaHei"';
+  ctx.fillText('u=' + l.u + 'px  f=' + l.f + 'px  v=' + (isFinite(img.v) ? img.v.toFixed(0) : '∞') + 'px  m=' + (isFinite(img.m) ? img.m.toFixed(1) : '—') + '  ' + img.type, 20, H - 16);
+}
+
+// ═══════════════════════════════════════════════════════════
+// 实验注册表
+// ═══════════════════════════════════════════════════════════
+const experiments = [
+  {
+    init: initPendulum, update: updatePendulum, draw: drawPendulum,
+    logData: function () {
+      const p = pend;
+      const Lm = p.L / 100, T = 2 * Math.PI / Math.sqrt(p.g / Lm);
+      return { '时间(s)': p.time.toFixed(2), '角度(°)': (p.angle * 180 / Math.PI).toFixed(1), '角速度(rad/s)': p.omega.toFixed(2), '周期(s)': T.toFixed(2) };
+    }
+  },
+  {
+    init: initWave, update: updateWave, draw: drawWave,
+    logData: function () {
+      const w = wave;
+      const dx = w.D * w.lambda * 1e-9 / ((w.d / 1000) + 1e-12) * 1000;
+      return { '波长(nm)': w.lambda, '缝距(mm)': w.d.toFixed(2), '屏距(m)': w.D.toFixed(1), '条纹间距(mm)': dx.toFixed(2) };
+    }
+  },
+  {
+    init: initGravity, update: updateGravity, draw: drawGravity,
+    logData: function () {
+      const g = grav;
+      const dx = g.x2 - g.x1, dy = g.y2 - g.y1, dist = Math.sqrt(dx * dx + dy * dy);
+      const ke = 0.5 * g.m1 * (g.vx1 * g.vx1 + g.vy1 * g.vy1) + 0.5 * g.m2 * (g.vx2 * g.vx2 + g.vy2 * g.vy2);
+      return { '时间': g.time.toFixed(1), '距离': Math.round(dist), '动能(×10¹²)': (ke / 1e12).toFixed(2) };
+    }
+  },
+  {
+    init: initLens, update: updateLens, draw: drawLens,
+    logData: function () {
+      const img = computeImage();
+      return { '焦距(px)': lens.f, '物距(px)': lens.u, '像距(px)': isFinite(img.v) ? Math.round(img.v) : '∞', '放大率': isFinite(img.m) ? img.m.toFixed(1) : '—', '像的性质': img.type };
+    }
+  },
+];
+
+// ═══════════════════════════════════════════════════════════
+// 初始化 & 主循环
+// ═══════════════════════════════════════════════════════════
+function initExperiment(idx) {
+  experiments[idx].init();
+  document.getElementById('infoText').textContent = experiments[idx].name || '仿真运行中';
+}
+
+let lastTime = 0;
+function mainLoop(timestamp) {
+  animId = requestAnimationFrame(mainLoop);
+  if (lastTime === 0) lastTime = timestamp;
+  const rawDt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+  const dt = Math.min(rawDt, 0.05);
+  frameCount++;
+  tickFPS(timestamp);
+
+  if (running) experiments[curTab].update(dt);
+  experiments[curTab].draw();
+}
+
+function startup() {
+  sizeCanvas();
+  initExperiment(0);
+  lastTime = performance.now();
+  requestAnimationFrame(mainLoop);
+}
+</script>
+
+</body>
+</html>
